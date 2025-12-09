@@ -181,6 +181,27 @@ public class AdminController {
                 .orElse(ApiResponse.error("配置不存在"));
     }
 
+    // 重置投票（回到未开始状态）
+    @PostMapping("/round/reset")
+    public ApiResponse<Void> resetRound() {
+        return voteConfigRepository.findTopByOrderByIdAsc()
+                .map(config -> {
+                    config.setCurrentStatus(VoteConfig.Status.not_started);
+                    voteConfigRepository.save(config);
+                    
+                    // 清空所有投票记录
+                    voteRecordRepository.deleteAll();
+                    
+                    // 重置所有候选人的第二轮资格
+                    List<Candidate> candidates = candidateRepository.findAll();
+                    candidates.forEach(c -> c.setIsRound2Qualified(false));
+                    candidateRepository.saveAll(candidates);
+                    
+                    return ApiResponse.<Void>success(null);
+                })
+                .orElse(ApiResponse.error("配置不存在"));
+    }
+
     // ==================== 投票结果 ====================
 
     @GetMapping("/results/{round}")
