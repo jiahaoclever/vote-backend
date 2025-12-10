@@ -74,6 +74,38 @@ public class AdminController {
         return ApiResponse.error("候选人不存在");
     }
 
+    // 批量删除候选人
+    @DeleteMapping("/candidates/batch")
+    public ApiResponse<Map<String, Object>> batchDeleteCandidates(@RequestBody List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return ApiResponse.error("请选择要删除的候选人");
+        }
+        int deletedCount = 0;
+        for (String id : ids) {
+            if (candidateRepository.existsById(id)) {
+                candidateRepository.deleteById(id);
+                deletedCount++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("deletedCount", deletedCount);
+        return ApiResponse.success("删除成功", result);
+    }
+
+    // 清空全部候选人（需要密码验证）
+    @DeleteMapping("/candidates/clear-all")
+    public ApiResponse<Map<String, Object>> clearAllCandidates(@RequestBody Map<String, String> body) {
+        String password = body.get("password");
+        if (!"seasonfair".equals(password)) {
+            return ApiResponse.error("密码错误");
+        }
+        long count = candidateRepository.count();
+        candidateRepository.deleteAll();
+        Map<String, Object> result = new HashMap<>();
+        result.put("deletedCount", count);
+        return ApiResponse.success("清空成功", result);
+    }
+
     // ==================== 投票配置 ====================
 
     @GetMapping("/config")
