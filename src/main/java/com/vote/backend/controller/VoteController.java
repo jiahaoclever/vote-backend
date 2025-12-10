@@ -32,10 +32,19 @@ public class VoteController {
         
         Map<String, Object> data = new HashMap<>();
         data.put("currentStatus", config.getCurrentStatus().name());
-        data.put("round1MaxApprove", config.getRound1MaxApprove());
-        data.put("round2MaxApprove", config.getRound2MaxApprove());
-        data.put("directorCount", config.getDirectorCount());
-        data.put("managerCount", config.getManagerCount());
+        
+        // 第一轮限票（分类别）
+        data.put("round1DirectorMaxApprove", config.getRound1DirectorMaxApprove());
+        data.put("round1ManagerMaxApprove", config.getRound1ManagerMaxApprove());
+        // 第二轮限票（分类别）
+        data.put("round2DirectorMaxApprove", config.getRound2DirectorMaxApprove());
+        data.put("round2ManagerMaxApprove", config.getRound2ManagerMaxApprove());
+        // 晋级名额
+        data.put("directorQualifyCount", config.getDirectorQualifyCount());
+        data.put("managerQualifyCount", config.getManagerQualifyCount());
+        // 当选名额
+        data.put("directorElectCount", config.getDirectorElectCount());
+        data.put("managerElectCount", config.getManagerElectCount());
         
         // 判断当前是第几轮
         int currentRound = 0;
@@ -84,5 +93,13 @@ public class VoteController {
         } catch (RuntimeException e) {
             return ApiResponse.error(e.getMessage());
         }
+    }
+
+    /**
+     * 获取实时投票结果（供大屏展示使用）
+     */
+    @GetMapping("/live-results")
+    public ApiResponse<Map<String, Object>> getLiveResults() {
+        return ApiResponse.success(voteService.getLiveResults());
     }
 }

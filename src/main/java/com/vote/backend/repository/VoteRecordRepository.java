@@ -31,4 +31,8 @@ public interface VoteRecordRepository extends JpaRepository<VoteRecord, Long> {
     // 批量统计某轮所有候选人的投票情况（优化N+1查询）
     @Query("SELECT v.candidateId, v.voteType, COUNT(v) FROM VoteRecord v WHERE v.round = ?1 GROUP BY v.candidateId, v.voteType")
     List<Object[]> countAllVotesByRound(Byte round);
+    
+    // 统计某轮已投票的人数
+    @Query("SELECT COUNT(DISTINCT v.voterId) FROM VoteRecord v WHERE v.round = ?1")
+    Long countDistinctVotersByRound(Byte round);
 }

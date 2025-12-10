@@ -74,6 +74,38 @@ public class AdminController {
         return ApiResponse.error("候选人不存在");
     }
 
+    // 批量删除候选人
+    @DeleteMapping("/candidates/batch")
+    public ApiResponse<Map<String, Object>> batchDeleteCandidates(@RequestBody List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return ApiResponse.error("请选择要删除的候选人");
+        }
+        int deletedCount = 0;
+        for (String id : ids) {
+            if (candidateRepository.existsById(id)) {
+                candidateRepository.deleteById(id);
+                deletedCount++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("deletedCount", deletedCount);
+        return ApiResponse.success("删除成功", result);
+    }
+
+    // 清空全部候选人（需要密码验证）
+    @DeleteMapping("/candidates/clear-all")
+    public ApiResponse<Map<String, Object>> clearAllCandidates(@RequestBody Map<String, String> body) {
+        String password = body.get("password");
+        if (!"seasonfair".equals(password)) {
+            return ApiResponse.error("密码错误");
+        }
+        long count = candidateRepository.count();
+        candidateRepository.deleteAll();
+        Map<String, Object> result = new HashMap<>();
+        result.put("deletedCount", count);
+        return ApiResponse.success("清空成功", result);
+    }
+
     // ==================== 投票配置 ====================
 
     @GetMapping("/config")
@@ -87,17 +119,33 @@ public class AdminController {
     public ApiResponse<VoteConfig> updateConfig(@RequestBody VoteConfig config) {
         return voteConfigRepository.findTopByOrderByIdAsc()
                 .map(existing -> {
-                    if (config.getRound1MaxApprove() != null) {
-                        existing.setRound1MaxApprove(config.getRound1MaxApprove());
+                    // 第一轮限票
+                    if (config.getRound1DirectorMaxApprove() != null) {
+                        existing.setRound1DirectorMaxApprove(config.getRound1DirectorMaxApprove());
                     }
-                    if (config.getRound2MaxApprove() != null) {
-                        existing.setRound2MaxApprove(config.getRound2MaxApprove());
+                    if (config.getRound1ManagerMaxApprove() != null) {
+                        existing.setRound1ManagerMaxApprove(config.getRound1ManagerMaxApprove());
                     }
-                    if (config.getDirectorCount() != null) {
-                        existing.setDirectorCount(config.getDirectorCount());
+                    // 第二轮限票
+                    if (config.getRound2DirectorMaxApprove() != null) {
+                        existing.setRound2DirectorMaxApprove(config.getRound2DirectorMaxApprove());
                     }
-                    if (config.getManagerCount() != null) {
-                        existing.setManagerCount(config.getManagerCount());
+                    if (config.getRound2ManagerMaxApprove() != null) {
+                        existing.setRound2ManagerMaxApprove(config.getRound2ManagerMaxApprove());
+                    }
+                    // 晋级名额
+                    if (config.getDirectorQualifyCount() != null) {
+                        existing.setDirectorQualifyCount(config.getDirectorQualifyCount());
+                    }
+                    if (config.getManagerQualifyCount() != null) {
+                        existing.setManagerQualifyCount(config.getManagerQualifyCount());
+                    }
+                    // 当选名额
+                    if (config.getDirectorElectCount() != null) {
+                        existing.setDirectorElectCount(config.getDirectorElectCount());
+                    }
+                    if (config.getManagerElectCount() != null) {
+                        existing.setManagerElectCount(config.getManagerElectCount());
                     }
                     return ApiResponse.success(voteConfigRepository.save(existing));
                 })
@@ -121,15 +169,67 @@ public class AdminController {
     }
 
     @PostMapping("/round/end-round1")
-    public ApiResponse<Void> endRound1() {
+    public ApiResponse<Map<String, Object>> endRound1() {
         return voteConfigRepository.findTopByOrderByIdAsc()
                 .map(config -> {
                     if (config.getCurrentStatus() != VoteConfig.Status.round1_voting) {
-                        return ApiResponse.<Void>error("当前状态不允许结束第一轮");
+                        return ApiResponse.<Map<String, Object>>error("当前状态不允许结束第一轮");
                     }
+                    
+                    // 自动计算晋级名单
+                    Byte round = 1;
+                    List<Object[]> voteStats = voteRecordRepository.countAllVotesByRound(round);
+                    
+                    // 构建 candidateId -> approveCount 映射
+                    Map<String, Long> approveMap = new HashMap<>();
+                    for (Object[] row : voteStats) {
+                        String candidateId = (String) row[0];
+                        String voteType = row[1].toString();
+                        Long count = (Long) row[2];
+                        if ("approve".equals(voteType)) {
+                            approveMap.put(candidateId, count);
+                        }
+                    }
+                    
+                    // 获取所有候选人并按类别分组
+                    List<Candidate> allCandidates = candidateRepository.findAll();
+                    List<Candidate> directors = allCandidates.stream()
+                            .filter(c -> c.getCategory() == Candidate.Category.director)
+                            .sorted((a, b) -> Long.compare(
+                                    approveMap.getOrDefault(b.getId(), 0L),
+                                    approveMap.getOrDefault(a.getId(), 0L)))
+                            .collect(Collectors.toList());
+                    List<Candidate> managers = allCandidates.stream()
+                            .filter(c -> c.getCategory() == Candidate.Category.manager)
+                            .sorted((a, b) -> Long.compare(
+                                    approveMap.getOrDefault(b.getId(), 0L),
+                                    approveMap.getOrDefault(a.getId(), 0L)))
+                            .collect(Collectors.toList());
+                    
+                    // 重置所有晋级状态
+                    allCandidates.forEach(c -> c.setIsRound2Qualified(false));
+                    
+                    // 设置晋级的常务理事
+                    int directorQualifyCount = config.getDirectorQualifyCount();
+                    for (int i = 0; i < Math.min(directorQualifyCount, directors.size()); i++) {
+                        directors.get(i).setIsRound2Qualified(true);
+                    }
+                    
+                    // 设置晋级的负责人
+                    int managerQualifyCount = config.getManagerQualifyCount();
+                    for (int i = 0; i < Math.min(managerQualifyCount, managers.size()); i++) {
+                        managers.get(i).setIsRound2Qualified(true);
+                    }
+                    
+                    candidateRepository.saveAll(allCandidates);
                     config.setCurrentStatus(VoteConfig.Status.round1_ended);
                     voteConfigRepository.save(config);
-                    return ApiResponse.<Void>success(null);
+                    
+                    // 返回晋级统计
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("qualifiedDirectors", Math.min(directorQualifyCount, directors.size()));
+                    result.put("qualifiedManagers", Math.min(managerQualifyCount, managers.size()));
+                    return ApiResponse.success("第一轮结束，晋级名单已自动生成", result);
                 })
                 .orElse(ApiResponse.error("配置不存在"));
     }
