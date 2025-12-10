@@ -151,13 +151,15 @@ public class VoteService {
         result.put("currentStatus", config.getCurrentStatus().name());
         
         // 判断当前轮次
-        int currentRound = 0;
+        final int currentRound;
         if (config.getCurrentStatus() == VoteConfig.Status.round1_voting || 
             config.getCurrentStatus() == VoteConfig.Status.round1_ended) {
             currentRound = 1;
         } else if (config.getCurrentStatus() == VoteConfig.Status.round2_voting || 
                    config.getCurrentStatus() == VoteConfig.Status.round2_ended) {
             currentRound = 2;
+        } else {
+            currentRound = 0;
         }
         result.put("currentRound", currentRound);
         
